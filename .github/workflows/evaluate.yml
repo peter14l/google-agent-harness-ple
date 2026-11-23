@@ -20,7 +20,7 @@ jobs:
   evaluate:
     name: Evaluate Dev Tasks
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # Allows up to 6 hours for complex multi-task runs
+    timeout-minutes: 360
 
     permissions:
       contents: write
@@ -50,6 +50,16 @@ jobs:
           docker info
           free -h
           df -h
+
+      - name: Fast Clone Tasks via Git (Bypasses Hugging Face API Rate Limits)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          echo "==> Cloning tasks repository via Git protocol to bypass REST rate limits..."
+          # git-lfs clone downloads the full packfile without triggering Hugging Face REST 429 errors
+          GIT_LFS_SKIP_SMUDGE=0 git clone --depth 1 https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam hf_dataset
+          echo "TASKS_DIR=$(pwd)/hf_dataset/tasks" >> $GITHUB_ENV
+          echo "==> Tasks directory prepared at: $(pwd)/hf_dataset/tasks"
 
       - name: Start LiteLLM Gemini Model Proxy
         env:
@@ -92,6 +102,7 @@ jobs:
           echo "==> Running evaluation with tasks: ${{ github.event.inputs.tasks }}"
           uv run python eval/run.py .. \
             --env-file ../local.env \
+            --tasks-dir "$TASKS_DIR" \
             --trials ${{ github.event.inputs.trials }} \
             $TASK_FLAG
 
