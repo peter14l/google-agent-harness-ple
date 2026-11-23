@@ -1,0 +1,21 @@
+model_list:
+  - model_name: gemini-3.8-flash
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: gemini-4-argon
+    litellm_params:
+      model: gemini/gemini-2.0-pro-exp
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: gemini-3.1-pro-preview
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+litellm_settings:
+  drop_params: true
+  num_retries: 3
+  request_timeout: 1800
+
+general_settings:
+  master_key: os.environ/MODEL_PROXY_KEY

@@ -10,7 +10,7 @@ on:
       trials:
         description: "Number of concurrent trials"
         required: true
-        default: "2"
+        default: "1"
       commit_artifacts:
         description: "Automatically commit generated artifacts back to the repository?"
         type: boolean
@@ -51,16 +51,34 @@ jobs:
           free -h
           df -h
 
+      - name: Start LiteLLM Gemini Model Proxy
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODEL_PROXY_KEY: ci-proxy-key
+        run: |
+          echo "==> Starting LiteLLM Gemini Proxy on port 4000..."
+          export GEMINI_API_KEY="${GEMINI_API_KEY}"
+          export MODEL_PROXY_KEY="${MODEL_PROXY_KEY}"
+          uv run --no-project --with 'litellm[proxy]' litellm \
+            --config .github/litellm_gemini_proxy.yaml \
+            --host 0.0.0.0 --port 4000 > proxy.log 2>&1 &
+          
+          for i in {1..15}; do
+            if curl -s http://localhost:4000/health >/dev/null 2>&1; then
+              echo "==> Proxy is healthy and accepting traffic."
+              break
+            fi
+            sleep 1
+          done
+
       - name: Prepare Evaluation Environment
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           cat <<EOF > local.env
           HF_TOKEN=${HF_TOKEN}
-          GEMINI_API_KEY=${GEMINI_API_KEY}
-          OPENAI_API_KEY=${OPENAI_API_KEY}
+          MODEL_PROXY_URL=http://localhost:4000
+          MODEL_PROXY_KEY=ci-proxy-key
           EOF
 
       - name: Execute Harbor Evaluation
@@ -72,7 +90,7 @@ jobs:
           fi
           
           echo "==> Running evaluation with tasks: ${{ github.event.inputs.tasks }}"
-          uv run python eval/run.py ../harness \
+          uv run python eval/run.py .. \
             --env-file ../local.env \
             --trials ${{ github.event.inputs.trials }} \
             $TASK_FLAG
@@ -81,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ple-evaluation-artifacts
-          path: harness/artifacts/
+          path: artifacts/
           retention-days: 30
 
       - name: Commit and Push Artifacts
@@ -89,4 +107,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update PLE evaluation dev artifacts [skip ci]"
-          file_pattern: "harness/artifacts/**"
+          file_pattern: "artifacts/**"
