@@ -26,27 +26,23 @@ jobs:
       contents: write
 
     steps:
-      - name: Optimize Disk Space & Remap Docker to /mnt (70GB+ Partition)
+      - name: Maximize Build Space (Expand Root to 50GB+)
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 35000
+          temp-reserve-mb: 5000
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          overprovision-lvm: 'true'
+
+      - name: Verify Reclaimed Disk Space
         run: |
-          echo "==> Disk space before optimization:"
+          echo "==> Maximized disk space available:"
           df -h
-
-          # 1. Clean heavy pre-installed caches from root partition
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-
-          # 2. Reconfigure Docker daemon to use the large 70GB+ /mnt partition
-          echo "==> Remapping Docker storage root to /mnt/docker..."
-          sudo systemctl stop docker
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl start docker
-
-          echo "==> Disk space after optimization:"
-          df -h
-          docker info | grep "Docker Root Dir"
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -67,16 +63,19 @@ jobs:
         run: |
           uv tool install harbor==0.20.0 --with websockets
 
-      - name: Fast Clone Tasks via Git onto /mnt
+      - name: Verify Docker Daemon & Resources
+        run: |
+          docker info
+          free -h
+
+      - name: Fast Clone Tasks via Git (Skip Large LFS Assets)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "==> Cloning tasks repository to /mnt/hf_dataset with skip smudge..."
-          sudo mkdir -p /mnt/hf_dataset
-          sudo chown -R runner:docker /mnt/hf_dataset
-          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam /mnt/hf_dataset
-          echo "TASKS_DIR=/mnt/hf_dataset/tasks" >> $GITHUB_ENV
-          echo "==> Tasks directory ready at: /mnt/hf_dataset/tasks"
+          echo "==> Cloning tasks repository metadata (skipping heavy LFS smudge)..."
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam hf_dataset
+          echo "TASKS_DIR=$(pwd)/hf_dataset/tasks" >> $GITHUB_ENV
+          echo "==> Tasks directory ready at: $(pwd)/hf_dataset/tasks"
 
       - name: Prepare Evaluation Environment & Execute Harbor Evaluation
         env:
