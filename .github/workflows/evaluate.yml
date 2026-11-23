@@ -56,43 +56,51 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           echo "==> Cloning tasks repository via Git protocol to bypass REST rate limits..."
-          # git-lfs clone downloads the full packfile without triggering Hugging Face REST 429 errors
           GIT_LFS_SKIP_SMUDGE=0 git clone --depth 1 https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam hf_dataset
           echo "TASKS_DIR=$(pwd)/hf_dataset/tasks" >> $GITHUB_ENV
           echo "==> Tasks directory prepared at: $(pwd)/hf_dataset/tasks"
 
-      - name: Start LiteLLM Gemini Model Proxy
+      - name: Prepare Evaluation Environment & Execute Harbor Evaluation
         env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MODEL_PROXY_KEY: ci-proxy-key
         run: |
-          echo "==> Starting LiteLLM Gemini Proxy on port 4000..."
-          export GEMINI_API_KEY="${GEMINI_API_KEY}"
-          export MODEL_PROXY_KEY="${MODEL_PROXY_KEY}"
-          uv run --no-project --with 'litellm[proxy]' litellm \
-            --config .github/litellm_gemini_proxy.yaml \
-            --host 0.0.0.0 --port 4000 > proxy.log 2>&1 &
-          
-          for i in {1..15}; do
-            if curl -s http://localhost:4000/health >/dev/null 2>&1; then
-              echo "==> Proxy is healthy and accepting traffic."
-              break
-            fi
-            sleep 1
-          done
-
-      - name: Prepare Evaluation Environment
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
+          # 1. Write local.env
           cat <<EOF > local.env
           HF_TOKEN=${HF_TOKEN}
           MODEL_PROXY_URL=http://localhost:4000
           MODEL_PROXY_KEY=ci-proxy-key
           EOF
 
-      - name: Execute Harbor Evaluation
-        run: |
+          # 2. Start LiteLLM proxy inside this active step so it stays alive
+          echo "==> Starting LiteLLM Proxy on 0.0.0.0:4000..."
+          export GEMINI_API_KEY="${GEMINI_API_KEY}"
+          export MODEL_PROXY_KEY="${MODEL_PROXY_KEY}"
+          uv run --no-project --with 'litellm[proxy]' litellm \
+            --config .github/litellm_gemini_proxy.yaml \
+            --host 0.0.0.0 --port 4000 > proxy.log 2>&1 &
+          PROXY_PID=$!
+
+          # 3. Wait for proxy on both localhost and Docker bridge (172.17.0.1)
+          echo "==> Waiting for LiteLLM proxy to bind to 0.0.0.0:4000..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:4000/health >/dev/null 2>&1; then
+              echo "==> Proxy listening on 127.0.0.1:4000."
+              break
+            fi
+            sleep 1
+          done
+
+          # Test connection at Docker bridge gateway
+          BRIDGE_IP="172.17.0.1"
+          if curl -s "http://${BRIDGE_IP}:4000/health" >/dev/null 2>&1; then
+            echo "==> Proxy successfully reachable from Docker bridge (${BRIDGE_IP}:4000)!"
+          else
+            echo "==> Notice: ${BRIDGE_IP}:4000 check returned; proxy is bound to 0.0.0.0."
+          fi
+
+          # 4. Run Harbor evaluation
           cd ple
           TASK_FLAG=""
           if [ "${{ github.event.inputs.tasks }}" != "all" ]; then
