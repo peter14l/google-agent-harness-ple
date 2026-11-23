@@ -43,14 +43,14 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          cd ple
-          # Create temporary env file for secrets if provided
+          touch local.env
           if [ -n "$HF_TOKEN" ]; then
-            echo "HF_TOKEN=$HF_TOKEN" >> ../local.env
+            echo "HF_TOKEN=$HF_TOKEN" >> local.env
           fi
           if [ -n "$GEMINI_API_KEY" ]; then
-            echo "GEMINI_API_KEY=$GEMINI_API_KEY" >> ../local.env
+            echo "GEMINI_API_KEY=$GEMINI_API_KEY" >> local.env
           fi
           
+          cd ple
           echo "==> Running python -m kit check..."
           uv run python -m kit check ../harness --env-file ../local.env
