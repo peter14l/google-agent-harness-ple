@@ -1,0 +1,56 @@
+name: Validate Harness (Smoke Test)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'harness/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Kit Check & Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv Package Manager
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Harbor 0.20.0 with WebSockets
+        run: |
+          uv tool install harbor==0.20.0 --with websockets
+
+      - name: Verify Docker Daemon
+        run: |
+          docker info
+
+      - name: Run Kit Check
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          cd ple
+          # Create temporary env file for secrets if provided
+          if [ -n "$HF_TOKEN" ]; then
+            echo "HF_TOKEN=$HF_TOKEN" >> ../local.env
+          fi
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY=$GEMINI_API_KEY" >> ../local.env
+          fi
+          
+          echo "==> Running python -m kit check..."
+          uv run python -m kit check ../harness --env-file ../local.env

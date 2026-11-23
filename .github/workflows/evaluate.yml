@@ -1,0 +1,92 @@
+name: Run PLE Evaluation & Generate Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tasks:
+        description: "Task IDs to evaluate (comma-separated, or 'all' for all 29 dev tasks)"
+        required: true
+        default: "engineers-estimate-check"
+      trials:
+        description: "Number of concurrent trials"
+        required: true
+        default: "2"
+      commit_artifacts:
+        description: "Automatically commit generated artifacts back to the repository?"
+        type: boolean
+        default: true
+
+jobs:
+  evaluate:
+    name: Evaluate Dev Tasks
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # Allows up to 6 hours for complex multi-task runs
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv Package Manager
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Harbor 0.20.0 with WebSockets
+        run: |
+          uv tool install harbor==0.20.0 --with websockets
+
+      - name: Verify Docker Daemon & Resources
+        run: |
+          docker info
+          free -h
+          df -h
+
+      - name: Prepare Evaluation Environment
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          cat <<EOF > local.env
+          HF_TOKEN=${HF_TOKEN}
+          GEMINI_API_KEY=${GEMINI_API_KEY}
+          OPENAI_API_KEY=${OPENAI_API_KEY}
+          EOF
+
+      - name: Execute Harbor Evaluation
+        run: |
+          cd ple
+          TASK_FLAG=""
+          if [ "${{ github.event.inputs.tasks }}" != "all" ]; then
+            TASK_FLAG="--tasks ${{ github.event.inputs.tasks }}"
+          fi
+          
+          echo "==> Running evaluation with tasks: ${{ github.event.inputs.tasks }}"
+          uv run python eval/run.py ../harness \
+            --env-file ../local.env \
+            --trials ${{ github.event.inputs.trials }} \
+            $TASK_FLAG
+
+      - name: Upload Artifacts Directory (Zip)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ple-evaluation-artifacts
+          path: harness/artifacts/
+          retention-days: 30
+
+      - name: Commit and Push Artifacts
+        if: ${{ github.event.inputs.commit_artifacts == true }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update PLE evaluation dev artifacts [skip ci]"
+          file_pattern: "harness/artifacts/**"

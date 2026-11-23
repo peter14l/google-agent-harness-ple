@@ -1,0 +1,21 @@
+# Environment and secrets
+*.env
+local.env
+.env*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Evaluation runs temporary outputs
+runs/
+.cache/
