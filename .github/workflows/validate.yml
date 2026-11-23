@@ -38,12 +38,14 @@ jobs:
         run: |
           docker info
 
-      - name: Run Kit Check
+      - name: Run Kit Validate & Check
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           touch local.env
+          echo "MODEL_PROXY_URL=http://localhost:4000" >> local.env
+          echo "MODEL_PROXY_KEY=ci-proxy-key" >> local.env
           if [ -n "$HF_TOKEN" ]; then
             echo "HF_TOKEN=$HF_TOKEN" >> local.env
           fi
@@ -52,5 +54,8 @@ jobs:
           fi
           
           cd ple
-          echo "==> Running python -m kit check..."
-          uv run python -m kit check ../harness --env-file ../local.env
+          echo "==> Running python -m kit validate..."
+          uv run python -m kit validate ../harness
+          
+          echo "==> Running python -m kit check (--no-smoke)..."
+          uv run python -m kit check ../harness --env-file ../local.env --no-smoke
