@@ -4,5 +4,10 @@ __pycache__/
 .venv/
 venv/
 *.env
+local.env
+.env*
+!.env.example
+*.log
+proxy.log
 .DS_Store
 runs/
