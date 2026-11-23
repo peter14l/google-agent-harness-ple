@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tasks:
-        description: "Task IDs to evaluate (comma-separated, or 'all' for all 29 dev tasks)"
+        description: "Task IDs to evaluate (comma-separated, e.g. 'engineers-estimate-check' or 'all')"
         required: true
         default: "engineers-estimate-check"
       trials:
@@ -26,6 +26,17 @@ jobs:
       contents: write
 
     steps:
+      - name: Free Disk Space on Runner
+        run: |
+          echo "==> Disk space before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          echo "==> Disk space after cleanup:"
+          df -h
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
@@ -49,7 +60,6 @@ jobs:
         run: |
           docker info
           free -h
-          df -h
 
       - name: Fast Clone Tasks via Git (Bypasses Hugging Face API Rate Limits)
         env:
