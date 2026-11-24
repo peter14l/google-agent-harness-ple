@@ -42,12 +42,11 @@ else
     echo "==> PLE tasks cache already present at $TASKS_CACHE_DIR"
 fi
 
-# 6. Ensure LiteLLM is installed upfront
-if ! command -v litellm >/dev/null 2>&1; then
-    echo "==> Installing litellm with proxy support..."
-    uv tool install 'litellm[proxy]'
-    export PATH="$HOME/.local/bin:$PATH"
-fi
+# 6. Ensure LiteLLM with proxy support (and orjson) is installed in uv tool isolated env
+echo "==> Ensuring litellm[proxy] is installed..."
+uv tool install 'litellm[proxy]' --with orjson --force
+export PATH="$HOME/.local/bin:$PATH"
+LITELLM_BIN="$HOME/.local/bin/litellm"
 
 # Stop any previous proxy instance on port 4000
 pkill -f "litellm" 2>/dev/null || true
@@ -55,7 +54,7 @@ sleep 1
 
 # Start LiteLLM Gemini Proxy on port 4000 (bind to 0.0.0.0 so Docker bridge 172.17.0.1 reaches it)
 echo "==> Starting LiteLLM Gemini Proxy on 0.0.0.0:4000..."
-litellm \
+"$LITELLM_BIN" \
     --config .github/litellm_gemini_proxy.yaml \
     --host 0.0.0.0 --port 4000 > proxy.log 2>&1 &
 PROXY_PID=$!
