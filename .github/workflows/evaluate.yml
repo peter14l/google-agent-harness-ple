@@ -26,19 +26,39 @@ jobs:
       contents: write
 
     steps:
-      - name: Reclaim Runner Disk Space (Free ~55GB on Root)
+      - name: Relocate Docker & Caches to /mnt (75GB Dedicated SSD)
         run: |
-          echo "==> Disk space BEFORE cleanup:"
-          df -h /
-          echo "==> Removing unused heavy preinstalled packages (.NET, Android, Haskell, CodeQL)..."
+          echo "==> Initial Disk Layout:"
+          df -h
+
+          echo "==> Cleaning root partition..."
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /usr/local/share/boost
-          sudo docker image prune --all --force || true
-          echo "==> Disk space AFTER cleanup:"
-          df -h /
+
+          echo "==> Relocating Docker data-root to /mnt/docker..."
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker /mnt/tmp /mnt/cache/uv /mnt/cache/huggingface /mnt/cache/plebench
+          sudo chmod 1777 /mnt/tmp
+
+          cat <<'EOF' | sudo tee /etc/docker/daemon.json
+          {
+            "data-root": "/mnt/docker",
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "50m",
+              "max-file": "2"
+            }
+          }
+          EOF
+
+          sudo systemctl start docker
+
+          echo "==> Disk Layout after relocation:"
+          df -h
+          docker info | grep "Docker Root Dir"
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -68,16 +88,19 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "==> Cloning tasks repository metadata (skipping heavy LFS smudge)..."
-          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam hf_dataset
-          echo "TASKS_DIR=$(pwd)/hf_dataset/tasks" >> $GITHUB_ENV
-          echo "==> Tasks directory ready at: $(pwd)/hf_dataset/tasks"
+          echo "==> Cloning tasks repository metadata into /mnt/cache/tasks..."
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam /mnt/cache/tasks
+          echo "TASKS_DIR=/mnt/cache/tasks/tasks" >> $GITHUB_ENV
+          echo "==> Tasks directory ready at: /mnt/cache/tasks/tasks"
 
       - name: Prepare Evaluation Environment & Execute Harbor Evaluation
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MODEL_PROXY_KEY: ci-proxy-key
+          TMPDIR: /mnt/tmp
+          UV_CACHE_DIR: /mnt/cache/uv
+          HF_HOME: /mnt/cache/huggingface
         run: |
           # 1. Ensure artifacts directory exists
           mkdir -p artifacts
@@ -95,7 +118,7 @@ jobs:
           export MODEL_PROXY_KEY="${MODEL_PROXY_KEY}"
           uv run --no-project --with 'litellm[proxy]' litellm \
             --config .github/litellm_gemini_proxy.yaml \
-            --host 0.0.0.0 --port 4000 > proxy.log 2>&1 &
+            --host 0.0.0.0 --port 4000 > /mnt/tmp/proxy.log 2>&1 &
 
           # 4. Wait for proxy on both localhost and Docker bridge (172.17.0.1)
           echo "==> Waiting for LiteLLM proxy to bind to 0.0.0.0:4000..."
