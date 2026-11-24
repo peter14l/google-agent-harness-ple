@@ -37,7 +37,7 @@ echo "==> Docker is active and running."
 TASKS_CACHE_DIR="/tmp/ple-tasks"
 if [ ! -d "$TASKS_CACHE_DIR/tasks" ]; then
     echo "==> Fetching PLE tasks dataset via Git (bypassing Hugging Face REST rate limits)..."
-    GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://huggingface.co/datasets/google/physical-engineerings-last-exam "$TASKS_CACHE_DIR"
+    GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "https://oauth2:${HF_TOKEN}@huggingface.co/datasets/google/physical-engineerings-last-exam" "$TASKS_CACHE_DIR"
 else
     echo "==> PLE tasks cache already present at $TASKS_CACHE_DIR"
 fi
