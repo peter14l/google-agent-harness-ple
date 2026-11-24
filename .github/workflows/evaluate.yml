@@ -41,6 +41,8 @@ jobs:
           echo "==> Relocating Docker data-root to /mnt/docker..."
           sudo systemctl stop docker
           sudo mkdir -p /mnt/docker /mnt/tmp /mnt/cache/uv /mnt/cache/huggingface /mnt/cache/plebench
+          sudo chmod -R 777 /mnt/cache /mnt/tmp
+          sudo chown -R runner:docker /mnt/cache /mnt/tmp || true
           sudo chmod 1777 /mnt/tmp
 
           cat <<'EOF' | sudo tee /etc/docker/daemon.json
