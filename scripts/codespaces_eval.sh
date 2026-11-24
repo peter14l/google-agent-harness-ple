@@ -42,21 +42,45 @@ else
     echo "==> PLE tasks cache already present at $TASKS_CACHE_DIR"
 fi
 
-# 6. Start LiteLLM Gemini Proxy on port 4000 (bind to 0.0.0.0 so Docker bridge 172.17.0.1 reaches it)
+# 6. Ensure LiteLLM is installed upfront
+if ! command -v litellm >/dev/null 2>&1; then
+    echo "==> Installing litellm with proxy support..."
+    uv tool install 'litellm[proxy]'
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Stop any previous proxy instance on port 4000
+pkill -f "litellm" 2>/dev/null || true
+sleep 1
+
+# Start LiteLLM Gemini Proxy on port 4000 (bind to 0.0.0.0 so Docker bridge 172.17.0.1 reaches it)
 echo "==> Starting LiteLLM Gemini Proxy on 0.0.0.0:4000..."
-uv run --no-project --with 'litellm[proxy]' litellm \
+litellm \
     --config .github/litellm_gemini_proxy.yaml \
     --host 0.0.0.0 --port 4000 > proxy.log 2>&1 &
 PROXY_PID=$!
 
 echo "==> Waiting for LiteLLM proxy to initialize..."
-for i in {1..30}; do
+READY=0
+for i in {1..60}; do
     if curl -s http://127.0.0.1:4000/health >/dev/null 2>&1; then
         echo "==> Proxy is healthy and ready on port 4000."
+        READY=1
         break
     fi
     sleep 1
 done
+
+if [ "$READY" -ne 1 ]; then
+    echo "Error: LiteLLM proxy failed to start within 60s. Log output:"
+    cat proxy.log
+    exit 1
+fi
+
+BRIDGE_IP="172.17.0.1"
+if curl -s "http://${BRIDGE_IP}:4000/health" >/dev/null 2>&1; then
+    echo "==> Docker bridge can reach LiteLLM at ${BRIDGE_IP}:4000."
+fi
 
 # 7. Prepare local.env
 cat <<EOF > local.env
